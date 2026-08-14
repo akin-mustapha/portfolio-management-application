@@ -1,0 +1,11 @@
+{'Items': [
+    {'date_acquired': '', 'location': 'Living Room', 'plant_id': 'PLANT_001', 'notes': 'Second house plant', 'status': {'Healthy'
+      }, 'routine': {'checkDaily': True, 'fertilizeFrequency': 'Monthly'
+      }, 'common_name': 'Tradescantia', 'nick_name': '', 'preference': {'humidity': 'Medium', 'temperature_c': '18-26', 'watering': 'Water when top 2-3 cm of soil is dry', 'light': 'Bright indirect'
+      }, 'scientific_name': 'Tradescantia Zabrina'
+    }
+  ], 'Count': 1, 'ScannedCount': 1, 'ResponseMetadata': {'RequestId': '0T3J6G12RBB10AU3G7KBLCUT33VV4KQNSO5AEMVJF66Q9ASUAAJG', 'HTTPStatusCode': 200, 'HTTPHeaders': {'server': 'Server', 'date': 'Wed,
+      29 Jul 2026 00: 52: 30 GMT', 'content-type': 'application/x-amz-json-1.0', 'content-length': '538', 'connection': 'keep-alive', 'x-amzn-requestid': '0T3J6G12RBB10AU3G7KBLCUT33VV4KQNSO5AEMVJF66Q9ASUAAJG', 'x-amz-crc32': '2286068277'
+    }, 'RetryAttempts': 0
+  }
+}

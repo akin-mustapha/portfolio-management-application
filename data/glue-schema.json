@@ -1,0 +1,83 @@
+[
+  {
+    "Name": "name",
+    "Type": "string",
+    "Comment": ""
+  },
+  {
+    "Name": "ticker",
+    "Type": "string",
+    "Comment": ""
+  },
+  {
+    "Name": "isin",
+    "Type": "string",
+    "Comment": ""
+  },
+  {
+    "Name": "created_at",
+    "Type": "timestamp",
+    "Comment": ""
+  },
+  {
+    "Name": "asset_currency",
+    "Type": "string",
+    "Comment": ""
+  },
+  {
+    "Name": "avg_price_paid",
+    "Type": "double",
+    "Comment": ""
+  },
+  {
+    "Name": "current_price",
+    "Type": "double",
+    "Comment": ""
+  },
+  {
+    "Name": "quantity",
+    "Type": "double",
+    "Comment": ""
+  },
+  {
+    "Name": "quantity_available_for_trading",
+    "Type": "double",
+    "Comment": ""
+  },
+  {
+    "Name": "quantity_in_pies",
+    "Type": "double",
+    "Comment": ""
+  },
+  {
+    "Name": "account_currency",
+    "Type": "string",
+    "Comment": ""
+  },
+  {
+    "Name": "current_value",
+    "Type": "double",
+    "Comment": ""
+  },
+  {
+    "Name": "fx_impact",
+    "Type": "double",
+    "Comment": ""
+  },
+  {
+    "Name": "total_cost",
+    "Type": "double",
+    "Comment": ""
+  },
+  {
+    "Name": "unrealized_profit_loss",
+    "Type": "double",
+    "Comment": ""
+  },
+  {
+    "Name": "ingested_date",
+    "Type": "string",
+    "Comment": "",
+    "PartitionKey": "Partition (0)"
+  }
+]

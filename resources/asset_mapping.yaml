@@ -1,0 +1,235 @@
+assets:
+  AMD:
+    trading212_ticker: AMDd_EQ
+    name: Advanced Micro Devices
+    sector: Information Technology
+    industry: Semiconductors
+    asset_type: stock
+  CBUK:
+    trading212_ticker: CBUKd_EQ
+    name: iShares MSCI China Tech (Acc)
+    sector: Information Technology
+    industry: China Technology
+    asset_type: etf
+  UNH:
+    trading212_ticker: UNH_US_EQ
+    name: UnitedHealth
+    sector: Healthcare
+    industry: Managed Healthcare
+    asset_type: stock
+  IH2O:
+    trading212_ticker: IH2Ol_EQ
+    name: iShares Global Water (Dist)
+    sector: Utilities
+    industry: Water
+    asset_type: etf
+  MSFT:
+    trading212_ticker: MSFT_US_EQ
+    name: Microsoft
+    sector: Information Technology
+    industry: Software
+    asset_type: stock
+  VUSA:
+    trading212_ticker: VUSAl_EQ
+    name: Vanguard S&P 500 (Dist)
+    sector: Multi-sector
+    industry: Broad Market Equity
+    asset_type: etf
+  WQTM:
+    trading212_ticker: WQTMd_EQ
+    name: WisdomTree Quantum Computing (Acc)
+    sector: Information Technology
+    industry: Quantum Computing
+    asset_type: etf
+  IWDP:
+    trading212_ticker: IWDPl_EQ
+    name: iShares Developed Markets Property Yield (Dist)
+    sector: Real Estate
+    industry: REITs
+    asset_type: etf
+  VUKG:
+    trading212_ticker: VUKGl_EQ
+    name: Vanguard FTSE 100 (Acc)
+    sector: Multi-sector
+    industry: UK Large Cap Equity
+    asset_type: etf
+  VWRP:
+    trading212_ticker: VWRPl_EQ
+    name: Vanguard FTSE All-World (Acc)
+    sector: Multi-sector
+    industry: Global Equity
+    asset_type: etf
+  TSM:
+    trading212_ticker: TSM_US_EQ
+    name: Taiwan Semiconductor Manufacturing
+    sector: Information Technology
+    industry: Semiconductors
+    asset_type: stock
+  INTL:
+    trading212_ticker: INTLl_EQ
+    name: WisdomTree Artificial Intelligence (Acc)
+    sector: Information Technology
+    industry: Artificial Intelligence
+    asset_type: etf
+  IWSZ:
+    trading212_ticker: IWSZl_EQ
+    name: iShares MSCI World Mid-Cap Equal Weight (Acc)
+    sector: Multi-sector
+    industry: Global Mid Cap Equity
+    asset_type: etf
+  BMT1:
+    trading212_ticker: BMT1d_EQ
+    name: British American Tobacco
+    sector: Consumer Staples
+    industry: Tobacco
+    asset_type: stock
+  NVDA:
+    trading212_ticker: NVDd_EQ
+    name: Nvidia
+    sector: Information Technology
+    industry: Semiconductors
+    asset_type: stock
+  CHV:
+    trading212_ticker: CHVd_EQ
+    name: Chevron
+    sector: Energy
+    industry: Oil & Gas Integrated
+    asset_type: stock
+  VGWE:
+    trading212_ticker: VGWEd_EQ
+    name: Vanguard FTSE All-World High Dividend Yield (Acc)
+    sector: Multi-sector
+    industry: Global High Dividend Equity
+    asset_type: etf
+  SC0U:
+    trading212_ticker: SC0Ud_EQ
+    name: Invesco STOXX Europe 600 Optimised Banks (Acc)
+    sector: Financials
+    industry: Banking
+    asset_type: etf
+  ANRJ:
+    trading212_ticker: ANRJl_EQ
+    name: Amundi Global Hydrogen
+    sector: Energy
+    industry: Hydrogen
+    asset_type: etf
+  ADBE:
+    trading212_ticker: ADBE_US_EQ
+    name: Adobe
+    sector: Information Technology
+    industry: Software
+    asset_type: stock
+  EUNY:
+    trading212_ticker: EUNYd_EQ
+    name: iShares EM Dividend (Dist)
+    sector: Multi-sector
+    industry: Emerging Markets Equity
+    asset_type: etf
+  SMCI:
+    trading212_ticker: SMCI_US_EQ
+    name: Super Micro Computer
+    sector: Information Technology
+    industry: Computer Hardware
+    asset_type: stock
+  VJPB:
+    trading212_ticker: VJPBl_EQ
+    name: Vanguard FTSE Japan (Acc)
+    sector: Multi-sector
+    industry: Japan Equity
+    asset_type: etf
+  ALV:
+    trading212_ticker: ALVd_EQ
+    name: Allianz
+    sector: Financials
+    industry: Insurance
+    asset_type: stock
+  KO:
+    trading212_ticker: KO_US_EQ
+    name: Coca-Cola
+    sector: Consumer Staples
+    industry: Beverages
+    asset_type: stock
+  VERG:
+    trading212_ticker: VERGl_EQ
+    name: Vanguard FTSE Developed Europe ex UK
+    sector: Multi-sector
+    industry: European Equity
+    asset_type: etf
+  VAGS:
+    trading212_ticker: VAGSl_EQ
+    name: Vanguard Global Aggregate Bond (Acc)
+    sector: Fixed Income
+    industry: Global Bonds
+    asset_type: etf
+  SEMI:
+    trading212_ticker: SEMIl_EQ
+    name: iShares MSCI Global Semiconductors (Acc)
+    sector: Information Technology
+    industry: Semiconductors
+    asset_type: etf
+  HCHS:
+    trading212_ticker: HCHSl_EQ
+    name: HSBC MSCI China (Acc)
+    sector: Multi-sector
+    industry: China Equity
+    asset_type: etf
+  IDVY:
+    trading212_ticker: IDVYa_EQ
+    name: iShares Euro Dividend (Dist)
+    sector: Multi-sector
+    industry: European Dividend Equity
+    asset_type: etf
+  EXH1:
+    trading212_ticker: EXH1d_EQ
+    name: iShares STOXX Europe 600 Oil & Gas DE (Dist)
+    sector: Energy
+    industry: Oil & Gas
+    asset_type: etf
+  GOOGL:
+    trading212_ticker: GOOGL_US_EQ
+    name: Alphabet Class A
+    sector: Communication Services
+    industry: Internet Services
+    asset_type: stock
+  NKE:
+    trading212_ticker: NKE_US_EQ
+    name: Nike
+    sector: Consumer Discretionary
+    industry: Apparel & Footwear
+    asset_type: stock
+  ISLN:
+    trading212_ticker: ISLNl_EQ
+    name: iShares Physical Silver
+    sector: Commodities
+    industry: Precious Metals
+    asset_type: etf
+  WCBR:
+    trading212_ticker: WCBRl_EQ
+    name: WisdomTree Cybersecurity (Acc)
+    sector: Information Technology
+    industry: Cybersecurity
+    asset_type: etf
+  XLEP:
+    trading212_ticker: XLEPl_EQ
+    name: Invesco Energy S&P US Select Sector
+    sector: Energy
+    industry: Oil & Gas
+    asset_type: etf
+  EXXW:
+    trading212_ticker: EXXWd_EQ
+    name: iShares Dow Jones Asia Pacific Select Dividend 50 DE (Dist)
+    sector: Multi-sector
+    industry: Asia Pacific Equity
+    asset_type: etf
+  IUSN:
+    trading212_ticker: IUSNd_EQ
+    name: iShares MSCI World Small Cap (Acc)
+    sector: Multi-sector
+    industry: Global Small Cap Equity
+    asset_type: etf
+  SONY:
+    trading212_ticker: SNE_US_EQ
+    name: Sony
+    sector: Consumer Discretionary
+    industry: Consumer Electronics
+    asset_type: stock
