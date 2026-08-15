@@ -1,2 +1,4 @@
 pyspark
 requests
+black
+ruff
