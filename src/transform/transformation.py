@@ -53,7 +53,7 @@ INPUT_PATH = "s3://t212-asset/positions/bronze-positions/"   # ingested_date=YYY
 OUTPUT_PATH = "s3://t212-asset/positions/silver-positions/"
 STATE_PATH = "s3://t212-asset/positions/_state/positions_watermark.json"
 GLUE_DATABASE = "trading-212"
-GLUE_TABLE = "positions_silver"
+GLUE_TABLE = "silver_positions"
 
 # Columns that need numeric casting after flattening. Keys use dot
 # notation because pandas.json_normalize flattens nested dicts to
@@ -126,13 +126,23 @@ def read_bronze(dates: List[date]) -> pd.DataFrame:
     Hive-style key=value partitions — bronze is never cataloged in Glue,
     so there's no benefit to Hive-style here, and matching the Lambda's
     actual write path avoids an unnecessary migration.
+
+    Each record is stamped with the partition date it was read from
+    (_bronze_partition_date), rather than relying on the ingested_date
+    field inside the JSON payload itself. The folder path is the source
+    of truth for partitioning; the embedded field's format has drifted
+    across bronze's history (plain date vs. tz-aware timestamp strings
+    depending on when the Lambda wrote it), so deriving from the path
+    sidesteps that inconsistency entirely instead of parsing around it.
     """
     frames = []
     for d in dates:
         p = f"{INPUT_PATH}{d.year}/{d.month:02d}/{d.day:02d}/"
         try:
-            frames.append(wr.s3.read_json(path=p, lines=True))
-            logger.info("Read partition %s", p)
+            part_df = wr.s3.read_json(path=p, lines=True)
+            part_df["_bronze_partition_date"] = d.isoformat()
+            frames.append(part_df)
+            logger.info("Read partition %s (%d rows)", p, len(part_df))
         except Exception:
             logger.warning("No bronze data found for partition %s, skipping", p)
     if not frames:
@@ -155,7 +165,7 @@ def flatten(df: pd.DataFrame) -> pd.DataFrame:
             flat[c] = pd.NA
 
     def col(name: str) -> pd.Series:
-        return flat[name] if name in flat.columns else pd.Series([pd.NA] * len(flat))
+        return flat[name] if name in flat.columns else pd.Series([None] * len(flat))
 
     result = pd.DataFrame({
         "name": col("instrument.name"),
@@ -174,7 +184,7 @@ def flatten(df: pd.DataFrame) -> pd.DataFrame:
         "total_cost": col("walletImpact.totalCost").astype("float64"),
         "unrealized_profit_loss": col("walletImpact.unrealizedProfitLoss").astype("float64"),
         "ingested_timestamp": pd.to_datetime(col("ingested_timestamp"), utc=True, errors="coerce"),
-        "ingested_date": pd.to_datetime(col("ingested_date"), errors="coerce").dt.date,
+        "ingested_date": pd.to_datetime(col("_bronze_partition_date"), errors="coerce").dt.date,
     })
     return result
 
