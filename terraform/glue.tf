@@ -29,7 +29,7 @@ resource "aws_glue_job" "bronze_to_silver" {
   default_arguments = {
     "--job-language"              = "python"
     "--JOB_NAME"                  = "financial-dataflow-bronze-to-silver"
-    "--additional-python-modules" = "awswrangler==3.*,pandas,pyarrow"
+    "--additional-python-modules" = "awswrangler==3.7.0,pandas,pyarrow==12.0.1"
     "--TempDir"                   = "s3://aws-glue-assets-${var.aws_account_id}-${var.aws_region}/temporary/"
   }
 
@@ -51,7 +51,7 @@ resource "aws_glue_job" "silver_to_gold" {
   default_arguments = {
     "--job-language"              = "python"
     "--JOB_NAME"                  = "financial-dataflow-silver-to-gold"
-    "--additional-python-modules" = "awswrangler==3.*,pandas,pyarrow"
+    "--additional-python-modules" = "awswrangler==3.7.0,pandas,pyarrow==12.0.1"
     "--TempDir"                   = "s3://aws-glue-assets-${var.aws_account_id}-${var.aws_region}/temporary/"
   }
 

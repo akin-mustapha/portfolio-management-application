@@ -3,10 +3,13 @@ Glue Python Shell job: Trading212 positions, silver -> gold.
 
 Builds a small star schema in the gold zone:
   - fact_positions: one row per position per ingestion snapshot
-                     (measures + FKs to dim_asset/dim_date)
+                     (measures + FKs to dim_asset/dim_date), plus
+                     unrealized_profit_loss_pct computed once here so
+                     every downstream query doesn't re-derive it
   - dim_asset:       one row per ticker, sourced from the static asset
                      mapping file (SCD Type 1 -- always overwritten with
-                     the latest mapping, no history kept)
+                     the latest mapping, no history kept), plus a
+                     derived is_etf flag
   - dim_date:        standard calendar dimension, one row per day
 
 Incremental with watermarking + explicit backfill, matching the
@@ -37,8 +40,8 @@ from awsglue.utils import getResolvedOptions
 # ---------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------
-INPUT_PATH = "s3://financial-dataflow/trading212/silver/positions/"   # ingested_date=YYYY-MM-DD/ partitions
-STATE_PATH = "s3://financial-dataflow/trading212/gold/_state/positions_gold_watermark.json"
+INPUT_PATH = "s3://financial-dataflow/silver/trading212/positions/"   # ingested_date=YYYY-MM-DD/ partitions
+STATE_PATH = "s3://financial-dataflow/gold/_state/positions_gold_watermark.json"
 MAPPING_BUCKET = "financial-dataflow"
 MAPPING_KEY = "resources/asset_mapping.json"
 GLUE_DATABASE = "financial_dataflow"
@@ -141,6 +144,7 @@ def build_dim_asset() -> pd.DataFrame:
             "sector": v["sector"],
             "industry": v["industry"],
             "asset_type": v["asset_type"],
+            "is_etf": v["asset_type"] == "etf",
         }
         for k, v in asset_mapping["assets"].items()
     ]
@@ -153,6 +157,7 @@ DEFAULT_ASSET = {
     "sector": "Unknown",
     "industry": "Unknown",
     "asset_type": "Unknown",
+    "is_etf": False,
 }
 
 
@@ -176,8 +181,12 @@ def reconcile_unmapped_tickers(fact_tickers: pd.Series, dim_asset: pd.DataFrame)
 # against dim_date -- computing it independently in two places risked
 # the two derivations silently drifting apart.
 # ---------------------------------------------------------------------
-def to_date_id(dates: pd.Series) -> pd.Series:
-    return pd.to_datetime(dates).dt.strftime("%Y%m%d").astype("int64")
+def to_date_id(dates) -> pd.Series:
+    # pd.Series(dates) normalizes both plain Series and DatetimeIndex
+    # (e.g. from pd.date_range) to a Series first, since .dt is a
+    # Series-only accessor -- DatetimeIndex exposes the same
+    # .strftime() directly on itself, not via .dt.
+    return pd.to_datetime(pd.Series(dates)).dt.strftime("%Y%m%d").astype("int64")
 
 
 # ---------------------------------------------------------------------
@@ -235,6 +244,12 @@ def build_fact_positions(df_silver: pd.DataFrame) -> pd.DataFrame:
     and are reached via a join on ticker, not duplicated here."""
     fact = df_silver[["ticker", "ingested_date", "ingested_timestamp", "asset_currency", "account_currency"] + FACT_MEASURE_COLS].copy()
     fact["date_id"] = to_date_id(fact["ingested_date"])
+
+    # NaN (not 0) when total_cost is 0/missing -- a 0% return would be
+    # indistinguishable from an actual break-even position otherwise.
+    fact["unrealized_profit_loss_pct"] = (
+        fact["unrealized_profit_loss"] / fact["total_cost"].replace(0, pd.NA)
+    )
     return fact
 
 
