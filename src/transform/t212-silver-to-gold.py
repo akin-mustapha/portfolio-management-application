@@ -44,7 +44,7 @@ INPUT_PATH = "s3://financial-dataflow/silver/trading212/positions/"   # ingested
 STATE_PATH = "s3://financial-dataflow/gold/_state/positions_gold_watermark.json"
 MAPPING_BUCKET = "financial-dataflow"
 MAPPING_KEY = "resources/asset_mapping.json"
-GLUE_DATABASE = "financial_dataflow"
+GLUE_DATABASE = "financials"
 
 FACT_TABLE = "fact_positions"
 FACT_PATH = "s3://financial-dataflow/gold/fact_positions/"

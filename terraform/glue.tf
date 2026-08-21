@@ -1,5 +1,5 @@
 resource "aws_glue_catalog_database" "financial_dataflow" {
-  name = "financial_dataflow"
+  name = "financials"
 }
 
 resource "aws_s3_object" "bronze_to_silver_script" {
