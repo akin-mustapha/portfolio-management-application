@@ -17,23 +17,23 @@ logger.setLevel(logging.INFO)
 
 API_URL = "https://live.trading212.com/api/v0"
 
-secret_name = "prod/t212"
+secret_name = "prod/financial-dataflow/trading212"
 region_name = "eu-west-1"
 
 
 _ENDPOINTS = {
     "account": {
         "endpoint": "equity/account/summary",
-        "bucket_name": "t212-asset",
-        "key": "account/bronze/",
+        "bucket_name": "financial-dataflow",
+        "key": "trading212/bronze/account/",
         # Account summary returns a single flat object, not a list or a
         # paginated {"items": [...]} envelope.
         "response_shape": "object",
     },
     "positions": {
         "endpoint": "equity/positions",
-        "bucket_name": "t212-asset",
-        "key": "positions/bronze-positions/",
+        "bucket_name": "financial-dataflow",
+        "key": "trading212/bronze/positions/",
         "response_shape": "list",
     },
     # "dividends": "equity/history/dividends",

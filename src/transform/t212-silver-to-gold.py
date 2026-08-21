@@ -14,7 +14,7 @@ follows the same Hive-style convention.
 Job setup (Python Shell, not Spark):
 - Python version: 3.9
 - Job parameters:
-    --JOB_NAME                   t212-silver-to-gold
+    --JOB_NAME                   financial-dataflow-silver-to-gold
     --additional-python-modules  awswrangler==3.*,pandas,pyarrow
 - Max capacity: 0.0625 or 1 DPU is plenty at this data volume.
 """
@@ -33,13 +33,13 @@ from awsglue.utils import getResolvedOptions
 # ---------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------
-INPUT_PATH = "s3://t212-asset/positions/silver-positions/"   # ingested_date=YYYY-MM-DD/ partitions
-OUTPUT_PATH = "s3://t212-asset/positions/gold-positions/"
-STATE_PATH = "s3://t212-asset/positions/_state/positions_gold_watermark.json"
-MAPPING_BUCKET = "t212-asset"
+INPUT_PATH = "s3://financial-dataflow/trading212/silver/positions/"   # ingested_date=YYYY-MM-DD/ partitions
+OUTPUT_PATH = "s3://financial-dataflow/trading212/gold/positions/"
+STATE_PATH = "s3://financial-dataflow/trading212/gold/_state/positions_gold_watermark.json"
+MAPPING_BUCKET = "financial-dataflow"
 MAPPING_KEY = "resources/asset_mapping.json"
-GLUE_DATABASE = "trading-212"
-GLUE_TABLE = "positions_gold"
+GLUE_DATABASE = "financial_dataflow"
+GLUE_TABLE = "gold_positions"
 
 args = getResolvedOptions(sys.argv, ["JOB_NAME"])
 logger = logging.getLogger(args["JOB_NAME"])

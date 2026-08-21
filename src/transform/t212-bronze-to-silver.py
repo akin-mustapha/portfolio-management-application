@@ -49,10 +49,10 @@ from awsglue.utils import getResolvedOptions
 # ---------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------
-INPUT_PATH = "s3://t212-asset/positions/bronze-positions/"   # ingested_date=YYYY-MM-DD/ partitions
-OUTPUT_PATH = "s3://t212-asset/positions/silver-positions/"
-STATE_PATH = "s3://t212-asset/positions/_state/positions_watermark.json"
-GLUE_DATABASE = "trading-212"
+INPUT_PATH = "s3://financial-dataflow/trading212/bronze/positions/"   # ingested_date=YYYY-MM-DD/ partitions
+OUTPUT_PATH = "s3://financial-dataflow/trading212/silver/positions/"
+STATE_PATH = "s3://financial-dataflow/trading212/silver/_state/positions_watermark.json"
+GLUE_DATABASE = "financial_dataflow"
 GLUE_TABLE = "silver_positions"
 
 # Columns that need numeric casting after flattening. Keys use dot
