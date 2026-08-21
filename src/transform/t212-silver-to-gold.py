@@ -1,15 +1,19 @@
 """
 Glue Python Shell job: Trading212 positions, silver -> gold.
 
-Enriches silver positions with asset metadata (sector, industry, asset
-type) from a static mapping file, and writes the result to the gold
-zone. Incremental with watermarking + explicit backfill, matching the
-bronze -> silver job's conventions.
+Builds a small star schema in the gold zone:
+  - fact_positions: one row per position per ingestion snapshot
+                     (measures + FKs to dim_asset/dim_date)
+  - dim_asset:       one row per ticker, sourced from the static asset
+                     mapping file (SCD Type 1 -- always overwritten with
+                     the latest mapping, no history kept)
+  - dim_date:        standard calendar dimension, one row per day
 
-Unlike bronze (plain year/month/day folders, not cataloged), silver is
-already Hive-style partitioned (ingested_date=YYYY-MM-DD/) since the
-bronze -> silver job writes it via awswrangler's partition_cols. Gold
-follows the same Hive-style convention.
+Incremental with watermarking + explicit backfill, matching the
+bronze -> silver job's conventions. Only fact_positions is
+date-partitioned; both dimensions are small (tens of rows for
+dim_asset, one row per calendar day for dim_date) and are rewritten
+in full on every run rather than partitioned or appended.
 
 Job setup (Python Shell, not Spark):
 - Python version: 3.9
@@ -34,12 +38,19 @@ from awsglue.utils import getResolvedOptions
 # Config
 # ---------------------------------------------------------------------
 INPUT_PATH = "s3://financial-dataflow/trading212/silver/positions/"   # ingested_date=YYYY-MM-DD/ partitions
-OUTPUT_PATH = "s3://financial-dataflow/trading212/gold/positions/"
 STATE_PATH = "s3://financial-dataflow/trading212/gold/_state/positions_gold_watermark.json"
 MAPPING_BUCKET = "financial-dataflow"
 MAPPING_KEY = "resources/asset_mapping.json"
 GLUE_DATABASE = "financial_dataflow"
-GLUE_TABLE = "gold_positions"
+
+FACT_TABLE = "fact_positions"
+FACT_PATH = "s3://financial-dataflow/gold/fact_positions/"
+
+DIM_ASSET_TABLE = "dim_asset"
+DIM_ASSET_PATH = "s3://financial-dataflow/gold/dim_asset/"
+
+DIM_DATE_TABLE = "dim_date"
+DIM_DATE_PATH = "s3://financial-dataflow/gold/dim_date/"
 
 args = getResolvedOptions(sys.argv, ["JOB_NAME"])
 logger = logging.getLogger(args["JOB_NAME"])
@@ -87,7 +98,7 @@ def dates_to_process() -> List[date]:
 
 
 # ---------------------------------------------------------------------
-# Read / enrich / write
+# Read silver
 # ---------------------------------------------------------------------
 def read_silver(dates: List[date]) -> pd.DataFrame:
     """Read silver Parquet for the given ingested_date partitions."""
@@ -106,56 +117,161 @@ def read_silver(dates: List[date]) -> pd.DataFrame:
     return df
 
 
-def load_ticker_lookup() -> dict:
-    """Load the ticker -> asset metadata mapping from S3."""
+# ---------------------------------------------------------------------
+# dim_asset
+# ---------------------------------------------------------------------
+def build_dim_asset() -> pd.DataFrame:
+    """Build dim_asset from the static ticker -> metadata mapping file.
+
+    SCD Type 1: this dimension is fully overwritten on every run, so a
+    correction to asset_mapping.json is reflected immediately and
+    applies retroactively when joined against historical fact rows.
+    No version history is kept.
+    """
     logger.info("Loading asset mapping from s3://%s/%s", MAPPING_BUCKET, MAPPING_KEY)
     s3 = boto3.client("s3")
     response = s3.get_object(Bucket=MAPPING_BUCKET, Key=MAPPING_KEY)
     asset_mapping = json.loads(response["Body"].read())
 
-    return {
-        v["trading212_ticker"]: {
+    rows = [
+        {
+            "ticker": v["trading212_ticker"],
             "symbol": k,
+            "name": v["name"],
             "sector": v["sector"],
             "industry": v["industry"],
             "asset_type": v["asset_type"],
         }
         for k, v in asset_mapping["assets"].items()
-    }
+    ]
+    return pd.DataFrame(rows)
 
 
-DEFAULT_MAPPING = {
+DEFAULT_ASSET = {
     "symbol": None,
+    "name": None,
     "sector": "Unknown",
     "industry": "Unknown",
     "asset_type": "Unknown",
 }
 
 
-def enrich(df: pd.DataFrame, ticker_lookup: dict) -> pd.DataFrame:
-    """Join positions to asset metadata by ticker."""
-    logger.info("Enriching %d rows with asset mapping", len(df))
-    mapping = df["ticker"].map(lambda t: ticker_lookup.get(t, DEFAULT_MAPPING))
-    mapping_df = pd.json_normalize(mapping)
-    mapping_df.index = df.index
+def reconcile_unmapped_tickers(fact_tickers: pd.Series, dim_asset: pd.DataFrame) -> pd.DataFrame:
+    """Append placeholder dim_asset rows for tickers seen in silver but
+    absent from asset_mapping.json, so fact_positions never references
+    a ticker that doesn't exist in dim_asset."""
+    known = set(dim_asset["ticker"])
+    unmapped = sorted(set(fact_tickers.dropna()) - known)
+    if not unmapped:
+        return dim_asset
 
-    unmapped = mapping_df["sector"].eq("Unknown").sum()
-    if unmapped:
-        logger.warning("%d rows had no asset mapping match (defaulted to Unknown)", unmapped)
-
-    return pd.concat([df, mapping_df], axis=1)
+    logger.warning("%d ticker(s) in silver have no asset mapping entry: %s", len(unmapped), unmapped)
+    placeholders = pd.DataFrame([{"ticker": t, **DEFAULT_ASSET} for t in unmapped])
+    return pd.concat([dim_asset, placeholders], ignore_index=True)
 
 
-def write_gold(df: pd.DataFrame, path: str, database: str, table: str) -> None:
-    logger.info("Writing %d rows to %s (partitioned by ingested_date)", len(df), path)
+# ---------------------------------------------------------------------
+# date_id: the shared fact/dim_date key, derived identically on both
+# sides so a fact row's date_id is always guaranteed to resolve
+# against dim_date -- computing it independently in two places risked
+# the two derivations silently drifting apart.
+# ---------------------------------------------------------------------
+def to_date_id(dates: pd.Series) -> pd.Series:
+    return pd.to_datetime(dates).dt.strftime("%Y%m%d").astype("int64")
+
+
+# ---------------------------------------------------------------------
+# dim_date
+# ---------------------------------------------------------------------
+def build_dim_date(start: date, end: date) -> pd.DataFrame:
+    """Standard calendar dimension, one row per day in [start, end]."""
+    days = pd.date_range(start, end, freq="D")
+    return pd.DataFrame({
+        "date_id": to_date_id(days),
+        "full_date": days.date,
+        "year": days.year,
+        "month": days.month,
+        "month_name": days.strftime("%B"),
+        "day": days.day,
+        "day_of_week": days.dayofweek,  # Monday=0
+        "day_name": days.strftime("%A"),
+        "quarter": days.quarter,
+        "is_weekend": days.dayofweek >= 5,
+    })
+
+
+def merge_dim_date(new_rows: pd.DataFrame) -> pd.DataFrame:
+    """Merge newly-needed date rows into the existing dim_date table,
+    de-duplicated by date_id. dim_date only ever grows."""
+    try:
+        existing = wr.s3.read_parquet(path=DIM_DATE_PATH, dataset=True)
+    except wr.exceptions.NoFilesFound:
+        existing = pd.DataFrame(columns=new_rows.columns)
+
+    combined = pd.concat([existing, new_rows], ignore_index=True)
+    combined = combined.drop_duplicates(subset="date_id").sort_values("date_id")
+    return combined.reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------
+# fact_positions
+# ---------------------------------------------------------------------
+FACT_MEASURE_COLS = [
+    "avg_price_paid",
+    "current_price",
+    "quantity",
+    "quantity_available_for_trading",
+    "quantity_in_pies",
+    "current_value",
+    "fx_impact",
+    "total_cost",
+    "unrealized_profit_loss",
+]
+
+
+def build_fact_positions(df_silver: pd.DataFrame) -> pd.DataFrame:
+    """Narrow silver down to the fact grain: FKs + measures only.
+    Asset attributes (name, sector, industry, ...) live in dim_asset
+    and are reached via a join on ticker, not duplicated here."""
+    fact = df_silver[["ticker", "ingested_date", "ingested_timestamp", "asset_currency", "account_currency"] + FACT_MEASURE_COLS].copy()
+    fact["date_id"] = to_date_id(fact["ingested_date"])
+    return fact
+
+
+def write_fact_positions(df: pd.DataFrame) -> None:
+    logger.info("Writing %d rows to %s (partitioned by ingested_date)", len(df), FACT_PATH)
     wr.s3.to_parquet(
         df=df,
-        path=path,
+        path=FACT_PATH,
         dataset=True,
         mode="overwrite_partitions",  # safe to rerun/backfill any date without duplicating
         partition_cols=["ingested_date"],
-        database=database,
-        table=table,
+        database=GLUE_DATABASE,
+        table=FACT_TABLE,
+    )
+
+
+def write_dim_asset(df: pd.DataFrame) -> None:
+    logger.info("Writing %d rows to %s (full overwrite, SCD Type 1)", len(df), DIM_ASSET_PATH)
+    wr.s3.to_parquet(
+        df=df,
+        path=DIM_ASSET_PATH,
+        dataset=True,
+        mode="overwrite",
+        database=GLUE_DATABASE,
+        table=DIM_ASSET_TABLE,
+    )
+
+
+def write_dim_date(df: pd.DataFrame) -> None:
+    logger.info("Writing %d rows to %s (full overwrite)", len(df), DIM_DATE_PATH)
+    wr.s3.to_parquet(
+        df=df,
+        path=DIM_DATE_PATH,
+        dataset=True,
+        mode="overwrite",
+        database=GLUE_DATABASE,
+        table=DIM_DATE_TABLE,
     )
 
 
@@ -170,9 +286,16 @@ def main() -> None:
         logger.info("No silver data found for target dates. Exiting without writing.")
         return
 
-    ticker_lookup = load_ticker_lookup()
-    df_gold = enrich(df_silver, ticker_lookup)
-    write_gold(df_gold, OUTPUT_PATH, GLUE_DATABASE, GLUE_TABLE)
+    dim_asset = build_dim_asset()
+    dim_asset = reconcile_unmapped_tickers(df_silver["ticker"], dim_asset)
+    write_dim_asset(dim_asset)
+
+    new_dim_date_rows = build_dim_date(min(dates), max(dates))
+    dim_date = merge_dim_date(new_dim_date_rows)
+    write_dim_date(dim_date)
+
+    fact_positions = build_fact_positions(df_silver)
+    write_fact_positions(fact_positions)
 
     if not IS_BACKFILL:
         set_watermark(max(dates))
