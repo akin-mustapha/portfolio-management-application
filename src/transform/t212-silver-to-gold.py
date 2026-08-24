@@ -40,20 +40,20 @@ from awsglue.utils import getResolvedOptions
 # ---------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------
-INPUT_PATH = "s3://financial-dataflow/silver/trading212/positions/"   # ingested_date=YYYY-MM-DD/ partitions
-STATE_PATH = "s3://financial-dataflow/gold/_state/positions_gold_watermark.json"
+INPUT_PATH = "s3://financial-dataflow/data/silver/trading212/positions/"   # ingested_date=YYYY-MM-DD/ partitions
+STATE_PATH = "s3://financial-dataflow/data/gold/_state/positions_gold_watermark.json"
 MAPPING_BUCKET = "financial-dataflow"
 MAPPING_KEY = "resources/asset_mapping.json"
 GLUE_DATABASE = "financials"
 
 FACT_TABLE = "fact_positions"
-FACT_PATH = "s3://financial-dataflow/gold/fact_positions/"
+FACT_PATH = "s3://financial-dataflow/data/gold/fact_positions/"
 
 DIM_ASSET_TABLE = "dim_asset"
-DIM_ASSET_PATH = "s3://financial-dataflow/gold/dim_asset/"
+DIM_ASSET_PATH = "s3://financial-dataflow/data/gold/dim_asset/"
 
 DIM_DATE_TABLE = "dim_date"
-DIM_DATE_PATH = "s3://financial-dataflow/gold/dim_date/"
+DIM_DATE_PATH = "s3://financial-dataflow/data/gold/dim_date/"
 
 args = getResolvedOptions(sys.argv, ["JOB_NAME"])
 logger = logging.getLogger(args["JOB_NAME"])
