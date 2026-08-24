@@ -25,7 +25,7 @@ _ENDPOINTS = {
     "account": {
         "endpoint": "equity/account/summary",
         "bucket_name": "financial-dataflow",
-        "key": "bronze/trading212/account/",
+        "key": "data/bronze/trading212/account/",
         # Account summary returns a single flat object, not a list or a
         # paginated {"items": [...]} envelope.
         "response_shape": "object",
@@ -33,7 +33,7 @@ _ENDPOINTS = {
     "positions": {
         "endpoint": "equity/positions",
         "bucket_name": "financial-dataflow",
-        "key": "bronze/trading212/positions/",
+        "key": "data/bronze/trading212/positions/",
         "response_shape": "list",
     },
     # "dividends": "equity/history/dividends",

@@ -49,9 +49,9 @@ from awsglue.utils import getResolvedOptions
 # ---------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------
-INPUT_PATH = "s3://financial-dataflow/bronze/trading212/positions/"   # ingested_date=YYYY-MM-DD/ partitions
-OUTPUT_PATH = "s3://financial-dataflow/silver/trading212/positions/"
-STATE_PATH = "s3://financial-dataflow/silver/trading212/_state/positions_watermark.json"
+INPUT_PATH = "s3://financial-dataflow/data/bronze/trading212/positions/"   # ingested_date=YYYY-MM-DD/ partitions
+OUTPUT_PATH = "s3://financial-dataflow/data/silver/trading212/positions/"
+STATE_PATH = "s3://financial-dataflow/data/silver/trading212/_state/positions_watermark.json"
 GLUE_DATABASE = "financials"
 GLUE_TABLE = "silver_positions"
 
