@@ -107,11 +107,14 @@ def dates_to_process() -> List[date]:
         logger.info("Backfill mode: %s to %s (watermark will NOT be updated)", start, end)
         return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
+    # today is always included and reprocessed, even if the watermark
+    # already covers it -- the Lambda ingests up to three times a day
+    # (open/midday/close, see scheduler.tf), so today's bronze
+    # partition isn't complete until the day's last run; overwrite_
+    # partitions makes re-flattening it each run safe.
     watermark = get_watermark()
     today = date.today()
-    start = today if watermark is None else watermark + timedelta(days=1)
-    if start > today:
-        return []
+    start = today if watermark is None else min(watermark + timedelta(days=1), today)
     return [start + timedelta(days=i) for i in range((today - start).days + 1)]
 
 
@@ -218,7 +221,11 @@ def main() -> None:
     write_silver(df_silver, OUTPUT_PATH, GLUE_DATABASE, GLUE_TABLE)
 
     if not IS_BACKFILL:
-        set_watermark(max(dates))
+        # Deliberately max(dates) - 1, not max(dates): today (always
+        # the last entry in dates, see dates_to_process) must stay
+        # reprocessable by later runs the same day, so the watermark
+        # only ever marks days that are fully in the past.
+        set_watermark(max(dates) - timedelta(days=1))
 
     logger.info("Job complete. Dates processed: %s", [d.isoformat() for d in dates])
 

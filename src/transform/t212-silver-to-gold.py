@@ -92,11 +92,15 @@ def dates_to_process() -> List[date]:
         logger.info("Backfill mode: %s to %s (watermark will NOT be updated)", start, end)
         return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
+    # today is always included and reprocessed, even if the watermark
+    # already covers it -- the Lambda ingests up to three times a day
+    # (open/midday/close, see scheduler.tf), so today's fact_positions
+    # row isn't final until the day's last run; each run recomputes it
+    # from whatever silver snapshots exist so far (collapse_to_daily),
+    # and overwrite_partitions replaces the partition each time.
     watermark = get_watermark()
     today = date.today()
-    start = today if watermark is None else watermark + timedelta(days=1)
-    if start > today:
-        return []
+    start = today if watermark is None else min(watermark + timedelta(days=1), today)
     return [start + timedelta(days=i) for i in range((today - start).days + 1)]
 
 
@@ -247,18 +251,27 @@ FACT_MEASURE_COLS = [
 ]
 
 
-def dedup_latest_snapshot(df: pd.DataFrame) -> pd.DataFrame:
-    """Collapse to one row per (ticker, ingested_date): the latest
-    ingested_timestamp. The Lambda ingests up to three times a day
-    (open/midday/close, see scheduler.tf), so a day's silver partition
-    can hold multiple snapshots per ticker -- fact_positions is meant
-    to be one row per ticker per day, so this makes that day's row the
-    last-known price for that day regardless of how many times the job
-    ran, and re-running later the same day naturally supersedes it."""
-    return (
-        df.sort_values("ingested_timestamp")
-        .drop_duplicates(subset=["ticker", "ingested_date"], keep="last")
-    )
+def collapse_to_daily(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse to one row per (ticker, ingested_date). The Lambda
+    ingests up to three times a day (open/midday/close, see
+    scheduler.tf), so a day's silver partition can hold multiple
+    snapshots per ticker.
+
+    open_price is the price on that day's oldest snapshot, close_price
+    the price on that day's newest -- re-running later the same day
+    (e.g. the close run, after the open run already wrote a partial
+    day) naturally supersedes open/close with whatever's known so far.
+    All other measure columns (quantity, total_cost, unrealized P/L,
+    ...) take the closing snapshot's values, since those describe the
+    day's final state rather than an intraday delta.
+    """
+    ordered = df.sort_values("ingested_timestamp")
+    grouped = ordered.groupby(["ticker", "ingested_date"], as_index=False)
+
+    daily = grouped.last()
+    daily["open_price"] = grouped["current_price"].first()["current_price"].values
+    daily = daily.rename(columns={"current_price": "close_price"})
+    return daily
 
 
 def build_fact_positions(df_silver: pd.DataFrame, df_lookback: pd.DataFrame) -> pd.DataFrame:
@@ -274,7 +287,7 @@ def build_fact_positions(df_silver: pd.DataFrame, df_lookback: pd.DataFrame) -> 
     target_dates = set(df_silver["ingested_date"])
     lookback = df_lookback[cols] if not df_lookback.empty else pd.DataFrame(columns=cols)
     combined = pd.concat([lookback, df_silver[cols]], ignore_index=True).copy()
-    combined = dedup_latest_snapshot(combined)
+    combined = collapse_to_daily(combined)
     combined = combined.sort_values(["ticker", "ingested_date"])
 
     # NaN (not 0) when total_cost is 0/missing -- a 0% return would be
@@ -283,13 +296,12 @@ def build_fact_positions(df_silver: pd.DataFrame, df_lookback: pd.DataFrame) -> 
         combined["unrealized_profit_loss"] / combined["total_cost"].replace(0, pd.NA)
     )
 
-    # Prior day's (deduped, latest-snapshot) price per ticker. NaN (not
-    # 0) when there's no prior day in scope (asset's first day, or a
-    # gap) -- a missing prior close must not be read as a 0 price /
-    # -100% return.
-    prev_price = combined.groupby("ticker")["current_price"].shift(1)
-    combined["price_change"] = combined["current_price"] - prev_price
-    combined["daily_return_pct"] = combined["price_change"] / prev_price.replace(0, pd.NA)
+    # Prior day's close per ticker. NaN (not 0) when there's no prior
+    # day in scope (asset's first day, or a gap) -- a missing prior
+    # close must not be read as a 0 price / -100% return.
+    prev_close = combined.groupby("ticker")["close_price"].shift(1)
+    combined["price_change"] = combined["close_price"] - prev_close
+    combined["daily_return_pct"] = combined["price_change"] / prev_close.replace(0, pd.NA)
 
     fact = combined[combined["ingested_date"].isin(target_dates)].copy()
     fact["date_id"] = to_date_id(fact["ingested_date"])
@@ -357,7 +369,11 @@ def main() -> None:
     write_fact_positions(fact_positions)
 
     if not IS_BACKFILL:
-        set_watermark(max(dates))
+        # Deliberately max(dates) - 1, not max(dates): today (always
+        # the last entry in dates, see dates_to_process) must stay
+        # reprocessable by later runs the same day, so the watermark
+        # only ever marks days that are fully in the past.
+        set_watermark(max(dates) - timedelta(days=1))
 
     logger.info("Job complete. Dates processed: %s", [d.isoformat() for d in dates])
 
