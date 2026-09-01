@@ -120,6 +120,15 @@ def read_silver(dates: List[date]) -> pd.DataFrame:
     return df
 
 
+def read_silver_lookback_day(before: date) -> pd.DataFrame:
+    """Read the single silver partition immediately preceding the run's
+    target dates, so per-ticker day-over-day deltas (build_fact_positions)
+    have a prior close to compare against even on incremental runs that
+    only touch one day at a time."""
+    lookback_date = before - timedelta(days=1)
+    return read_silver([lookback_date])
+
+
 # ---------------------------------------------------------------------
 # dim_asset
 # ---------------------------------------------------------------------
@@ -238,18 +247,36 @@ FACT_MEASURE_COLS = [
 ]
 
 
-def build_fact_positions(df_silver: pd.DataFrame) -> pd.DataFrame:
+def build_fact_positions(df_silver: pd.DataFrame, df_lookback: pd.DataFrame) -> pd.DataFrame:
     """Narrow silver down to the fact grain: FKs + measures only.
     Asset attributes (name, sector, industry, ...) live in dim_asset
-    and are reached via a join on ticker, not duplicated here."""
-    fact = df_silver[["ticker", "ingested_date", "ingested_timestamp", "asset_currency", "account_currency"] + FACT_MEASURE_COLS].copy()
-    fact["date_id"] = to_date_id(fact["ingested_date"])
+    and are reached via a join on ticker, not duplicated here.
+
+    df_lookback supplies one extra prior day per ticker (read separately
+    in main via read_silver_lookback_day) purely so price_change /
+    daily_return_pct have a previous close to diff against on
+    incremental runs; its rows are dropped again before returning."""
+    cols = ["ticker", "ingested_date", "ingested_timestamp", "asset_currency", "account_currency"] + FACT_MEASURE_COLS
+    target_dates = set(df_silver["ingested_date"])
+    lookback = df_lookback[cols] if not df_lookback.empty else pd.DataFrame(columns=cols)
+    combined = pd.concat([lookback, df_silver[cols]], ignore_index=True).copy()
+    combined = combined.sort_values(["ticker", "ingested_date"])
 
     # NaN (not 0) when total_cost is 0/missing -- a 0% return would be
     # indistinguishable from an actual break-even position otherwise.
-    fact["unrealized_profit_loss_pct"] = (
-        fact["unrealized_profit_loss"] / fact["total_cost"].replace(0, pd.NA)
+    combined["unrealized_profit_loss_pct"] = (
+        combined["unrealized_profit_loss"] / combined["total_cost"].replace(0, pd.NA)
     )
+
+    # Prior day's price per ticker. NaN (not 0) when there's no prior
+    # day in scope (asset's first day, or a gap) -- a missing prior
+    # close must not be read as a 0 price / -100% return.
+    prev_price = combined.groupby("ticker")["current_price"].shift(1)
+    combined["price_change"] = combined["current_price"] - prev_price
+    combined["daily_return_pct"] = combined["price_change"] / prev_price.replace(0, pd.NA)
+
+    fact = combined[combined["ingested_date"].isin(target_dates)].copy()
+    fact["date_id"] = to_date_id(fact["ingested_date"])
     return fact
 
 
@@ -309,7 +336,8 @@ def main() -> None:
     dim_date = merge_dim_date(new_dim_date_rows)
     write_dim_date(dim_date)
 
-    fact_positions = build_fact_positions(df_silver)
+    df_lookback = read_silver_lookback_day(min(dates))
+    fact_positions = build_fact_positions(df_silver, df_lookback)
     write_fact_positions(fact_positions)
 
     if not IS_BACKFILL:
