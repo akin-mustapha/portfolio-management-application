@@ -247,6 +247,20 @@ FACT_MEASURE_COLS = [
 ]
 
 
+def dedup_latest_snapshot(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse to one row per (ticker, ingested_date): the latest
+    ingested_timestamp. The Lambda ingests up to three times a day
+    (open/midday/close, see scheduler.tf), so a day's silver partition
+    can hold multiple snapshots per ticker -- fact_positions is meant
+    to be one row per ticker per day, so this makes that day's row the
+    last-known price for that day regardless of how many times the job
+    ran, and re-running later the same day naturally supersedes it."""
+    return (
+        df.sort_values("ingested_timestamp")
+        .drop_duplicates(subset=["ticker", "ingested_date"], keep="last")
+    )
+
+
 def build_fact_positions(df_silver: pd.DataFrame, df_lookback: pd.DataFrame) -> pd.DataFrame:
     """Narrow silver down to the fact grain: FKs + measures only.
     Asset attributes (name, sector, industry, ...) live in dim_asset
@@ -260,6 +274,7 @@ def build_fact_positions(df_silver: pd.DataFrame, df_lookback: pd.DataFrame) -> 
     target_dates = set(df_silver["ingested_date"])
     lookback = df_lookback[cols] if not df_lookback.empty else pd.DataFrame(columns=cols)
     combined = pd.concat([lookback, df_silver[cols]], ignore_index=True).copy()
+    combined = dedup_latest_snapshot(combined)
     combined = combined.sort_values(["ticker", "ingested_date"])
 
     # NaN (not 0) when total_cost is 0/missing -- a 0% return would be
@@ -268,9 +283,10 @@ def build_fact_positions(df_silver: pd.DataFrame, df_lookback: pd.DataFrame) -> 
         combined["unrealized_profit_loss"] / combined["total_cost"].replace(0, pd.NA)
     )
 
-    # Prior day's price per ticker. NaN (not 0) when there's no prior
-    # day in scope (asset's first day, or a gap) -- a missing prior
-    # close must not be read as a 0 price / -100% return.
+    # Prior day's (deduped, latest-snapshot) price per ticker. NaN (not
+    # 0) when there's no prior day in scope (asset's first day, or a
+    # gap) -- a missing prior close must not be read as a 0 price /
+    # -100% return.
     prev_price = combined.groupby("ticker")["current_price"].shift(1)
     combined["price_change"] = combined["current_price"] - prev_price
     combined["daily_return_pct"] = combined["price_change"] / prev_price.replace(0, pd.NA)
