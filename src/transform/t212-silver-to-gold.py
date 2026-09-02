@@ -251,8 +251,6 @@ FACT_MEASURE_COLS = [
     "avg_price_paid",
     "current_price",
     "quantity",
-    "quantity_available_for_trading",
-    "quantity_in_pies",
     "current_value",
     "fx_impact",
     "total_cost",
@@ -292,7 +290,7 @@ def build_fact_positions(df_silver: pd.DataFrame, df_lookback: pd.DataFrame) -> 
     in main via read_silver_lookback_day) purely so price_change /
     daily_return_pct have a previous close to diff against on
     incremental runs; its rows are dropped again before returning."""
-    cols = ["ticker", "ingested_date", "ingested_timestamp", "asset_currency", "account_currency"] + FACT_MEASURE_COLS
+    cols = ["ticker", "ingested_date", "ingested_timestamp", "asset_currency"] + FACT_MEASURE_COLS
     target_dates = set(df_silver["ingested_date"])
     lookback = df_lookback[cols] if not df_lookback.empty else pd.DataFrame(columns=cols)
     combined = pd.concat([lookback, df_silver[cols]], ignore_index=True).copy()
