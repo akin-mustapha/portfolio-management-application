@@ -19,10 +19,11 @@ Incremental logic:
   hence this hand-rolled version.
 
 Backfill:
-- Pass --START_DATE and --END_DATE (YYYY-MM-DD) as job parameters to
-  explicitly reprocess a historical date range. Backfill runs do NOT
-  move the watermark, so they can't accidentally disturb normal
-  incremental runs.
+- Pass --START_DATE (YYYY-MM-DD) as a job parameter to reprocess a
+  historical date range. --END_DATE is optional and defaults to today
+  if omitted, so a single --START_DATE reprocesses everything from
+  that date through today. Backfill runs do NOT move the watermark,
+  so they can't accidentally disturb normal incremental runs.
 - Reprocessing any date is safe because writes use
   mode="overwrite_partitions": rerunning a date replaces that
   partition rather than duplicating rows.
@@ -78,9 +79,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # since getResolvedOptions treats every listed arg as required.
 _parser = argparse.ArgumentParser(add_help=False)
 _parser.add_argument("--START_DATE", default=None, help="YYYY-MM-DD, backfill start (inclusive)")
-_parser.add_argument("--END_DATE", default=None, help="YYYY-MM-DD, backfill end (inclusive)")
+_parser.add_argument("--END_DATE", default=None, help="YYYY-MM-DD, backfill end (inclusive). Defaults to today if omitted.")
 BACKFILL_ARGS, _ = _parser.parse_known_args(sys.argv[1:])
-IS_BACKFILL = bool(BACKFILL_ARGS.START_DATE and BACKFILL_ARGS.END_DATE)
+IS_BACKFILL = bool(BACKFILL_ARGS.START_DATE)
 
 
 # ---------------------------------------------------------------------
@@ -103,7 +104,11 @@ def set_watermark(new_date: date) -> None:
 def dates_to_process() -> List[date]:
     if IS_BACKFILL:
         start = pd.to_datetime(BACKFILL_ARGS.START_DATE).date()
-        end = pd.to_datetime(BACKFILL_ARGS.END_DATE).date()
+        end = (
+            pd.to_datetime(BACKFILL_ARGS.END_DATE).date()
+            if BACKFILL_ARGS.END_DATE
+            else date.today()
+        )
         logger.info("Backfill mode: %s to %s (watermark will NOT be updated)", start, end)
         return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 

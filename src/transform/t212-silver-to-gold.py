@@ -18,6 +18,11 @@ date-partitioned; both dimensions are small (tens of rows for
 dim_asset, one row per calendar day for dim_date) and are rewritten
 in full on every run rather than partitioned or appended.
 
+Backfill: pass --START_DATE (YYYY-MM-DD) as a job parameter to
+reprocess a historical date range. --END_DATE is optional and
+defaults to today if omitted. Backfill runs do NOT move the
+watermark.
+
 Job setup (Python Shell, not Spark):
 - Python version: 3.9
 - Job parameters:
@@ -63,9 +68,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # since getResolvedOptions treats every listed arg as required.
 _parser = argparse.ArgumentParser(add_help=False)
 _parser.add_argument("--START_DATE", default=None, help="YYYY-MM-DD, backfill start (inclusive)")
-_parser.add_argument("--END_DATE", default=None, help="YYYY-MM-DD, backfill end (inclusive)")
+_parser.add_argument("--END_DATE", default=None, help="YYYY-MM-DD, backfill end (inclusive). Defaults to today if omitted.")
 BACKFILL_ARGS, _ = _parser.parse_known_args(sys.argv[1:])
-IS_BACKFILL = bool(BACKFILL_ARGS.START_DATE and BACKFILL_ARGS.END_DATE)
+IS_BACKFILL = bool(BACKFILL_ARGS.START_DATE)
 
 
 # ---------------------------------------------------------------------
@@ -88,7 +93,11 @@ def set_watermark(new_date: date) -> None:
 def dates_to_process() -> List[date]:
     if IS_BACKFILL:
         start = pd.to_datetime(BACKFILL_ARGS.START_DATE).date()
-        end = pd.to_datetime(BACKFILL_ARGS.END_DATE).date()
+        end = (
+            pd.to_datetime(BACKFILL_ARGS.END_DATE).date()
+            if BACKFILL_ARGS.END_DATE
+            else date.today()
+        )
         logger.info("Backfill mode: %s to %s (watermark will NOT be updated)", start, end)
         return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
