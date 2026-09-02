@@ -59,3 +59,37 @@ resource "aws_glue_job" "silver_to_gold" {
   max_capacity = 0.0625
   timeout      = 2880
 }
+
+# DAG: bronze_to_silver -> silver_to_gold. ON_DEMAND for now (started
+# manually or by whatever kicks off the workflow); S3 event
+# notifications to auto-start it on new bronze data land separately.
+resource "aws_glue_workflow" "financial_dataflow" {
+  name = "financial-dataflow"
+}
+
+resource "aws_glue_trigger" "start_bronze_to_silver" {
+  name          = "financial-dataflow-start-bronze-to-silver"
+  workflow_name = aws_glue_workflow.financial_dataflow.name
+  type          = "ON_DEMAND"
+
+  actions {
+    job_name = aws_glue_job.bronze_to_silver.name
+  }
+}
+
+resource "aws_glue_trigger" "start_silver_to_gold" {
+  name          = "financial-dataflow-start-silver-to-gold"
+  workflow_name = aws_glue_workflow.financial_dataflow.name
+  type          = "CONDITIONAL"
+
+  predicate {
+    conditions {
+      job_name = aws_glue_job.bronze_to_silver.name
+      state    = "SUCCEEDED"
+    }
+  }
+
+  actions {
+    job_name = aws_glue_job.silver_to_gold.name
+  }
+}

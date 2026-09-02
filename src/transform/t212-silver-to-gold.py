@@ -18,6 +18,11 @@ date-partitioned; both dimensions are small (tens of rows for
 dim_asset, one row per calendar day for dim_date) and are rewritten
 in full on every run rather than partitioned or appended.
 
+Backfill: pass --START_DATE (YYYY-MM-DD) as a job parameter to
+reprocess a historical date range. --END_DATE is optional and
+defaults to today if omitted. Backfill runs do NOT move the
+watermark.
+
 Job setup (Python Shell, not Spark):
 - Python version: 3.9
 - Job parameters:
@@ -63,9 +68,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # since getResolvedOptions treats every listed arg as required.
 _parser = argparse.ArgumentParser(add_help=False)
 _parser.add_argument("--START_DATE", default=None, help="YYYY-MM-DD, backfill start (inclusive)")
-_parser.add_argument("--END_DATE", default=None, help="YYYY-MM-DD, backfill end (inclusive)")
+_parser.add_argument("--END_DATE", default=None, help="YYYY-MM-DD, backfill end (inclusive). Defaults to today if omitted.")
 BACKFILL_ARGS, _ = _parser.parse_known_args(sys.argv[1:])
-IS_BACKFILL = bool(BACKFILL_ARGS.START_DATE and BACKFILL_ARGS.END_DATE)
+IS_BACKFILL = bool(BACKFILL_ARGS.START_DATE)
 
 
 # ---------------------------------------------------------------------
@@ -88,15 +93,23 @@ def set_watermark(new_date: date) -> None:
 def dates_to_process() -> List[date]:
     if IS_BACKFILL:
         start = pd.to_datetime(BACKFILL_ARGS.START_DATE).date()
-        end = pd.to_datetime(BACKFILL_ARGS.END_DATE).date()
+        end = (
+            pd.to_datetime(BACKFILL_ARGS.END_DATE).date()
+            if BACKFILL_ARGS.END_DATE
+            else date.today()
+        )
         logger.info("Backfill mode: %s to %s (watermark will NOT be updated)", start, end)
         return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
+    # today is always included and reprocessed, even if the watermark
+    # already covers it -- the Lambda ingests up to three times a day
+    # (open/midday/close, see scheduler.tf), so today's fact_positions
+    # row isn't final until the day's last run; each run recomputes it
+    # from whatever silver snapshots exist so far (collapse_to_daily),
+    # and overwrite_partitions replaces the partition each time.
     watermark = get_watermark()
     today = date.today()
-    start = today if watermark is None else watermark + timedelta(days=1)
-    if start > today:
-        return []
+    start = today if watermark is None else min(watermark + timedelta(days=1), today)
     return [start + timedelta(days=i) for i in range((today - start).days + 1)]
 
 
@@ -118,6 +131,15 @@ def read_silver(dates: List[date]) -> pd.DataFrame:
         return pd.DataFrame()
     logger.info("Silver row count for this run: %d", len(df))
     return df
+
+
+def read_silver_lookback_day(before: date) -> pd.DataFrame:
+    """Read the single silver partition immediately preceding the run's
+    target dates, so per-ticker day-over-day deltas (build_fact_positions)
+    have a prior close to compare against even on incremental runs that
+    only touch one day at a time."""
+    lookback_date = before - timedelta(days=1)
+    return read_silver([lookback_date])
 
 
 # ---------------------------------------------------------------------
@@ -229,8 +251,6 @@ FACT_MEASURE_COLS = [
     "avg_price_paid",
     "current_price",
     "quantity",
-    "quantity_available_for_trading",
-    "quantity_in_pies",
     "current_value",
     "fx_impact",
     "total_cost",
@@ -238,18 +258,60 @@ FACT_MEASURE_COLS = [
 ]
 
 
-def build_fact_positions(df_silver: pd.DataFrame) -> pd.DataFrame:
+def collapse_to_daily(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse to one row per (ticker, ingested_date). The Lambda
+    ingests up to three times a day (open/midday/close, see
+    scheduler.tf), so a day's silver partition can hold multiple
+    snapshots per ticker.
+
+    open_price is the price on that day's oldest snapshot, close_price
+    the price on that day's newest -- re-running later the same day
+    (e.g. the close run, after the open run already wrote a partial
+    day) naturally supersedes open/close with whatever's known so far.
+    All other measure columns (quantity, total_cost, unrealized P/L,
+    ...) take the closing snapshot's values, since those describe the
+    day's final state rather than an intraday delta.
+    """
+    ordered = df.sort_values("ingested_timestamp")
+    grouped = ordered.groupby(["ticker", "ingested_date"], as_index=False)
+
+    daily = grouped.last()
+    daily["open_price"] = grouped["current_price"].first()["current_price"].values
+    daily = daily.rename(columns={"current_price": "close_price"})
+    return daily
+
+
+def build_fact_positions(df_silver: pd.DataFrame, df_lookback: pd.DataFrame) -> pd.DataFrame:
     """Narrow silver down to the fact grain: FKs + measures only.
     Asset attributes (name, sector, industry, ...) live in dim_asset
-    and are reached via a join on ticker, not duplicated here."""
-    fact = df_silver[["ticker", "ingested_date", "ingested_timestamp", "asset_currency", "account_currency"] + FACT_MEASURE_COLS].copy()
-    fact["date_id"] = to_date_id(fact["ingested_date"])
+    and are reached via a join on ticker, not duplicated here.
+
+    df_lookback supplies one extra prior day per ticker (read separately
+    in main via read_silver_lookback_day) purely so price_change /
+    daily_return_pct have a previous close to diff against on
+    incremental runs; its rows are dropped again before returning."""
+    cols = ["ticker", "ingested_date", "ingested_timestamp", "asset_currency"] + FACT_MEASURE_COLS
+    target_dates = set(df_silver["ingested_date"])
+    lookback = df_lookback[cols] if not df_lookback.empty else pd.DataFrame(columns=cols)
+    combined = pd.concat([lookback, df_silver[cols]], ignore_index=True).copy()
+    combined = collapse_to_daily(combined)
+    combined = combined.sort_values(["ticker", "ingested_date"])
 
     # NaN (not 0) when total_cost is 0/missing -- a 0% return would be
     # indistinguishable from an actual break-even position otherwise.
-    fact["unrealized_profit_loss_pct"] = (
-        fact["unrealized_profit_loss"] / fact["total_cost"].replace(0, pd.NA)
+    combined["unrealized_profit_loss_pct"] = (
+        combined["unrealized_profit_loss"] / combined["total_cost"].replace(0, pd.NA)
     )
+
+    # Prior day's close per ticker. NaN (not 0) when there's no prior
+    # day in scope (asset's first day, or a gap) -- a missing prior
+    # close must not be read as a 0 price / -100% return.
+    prev_close = combined.groupby("ticker")["close_price"].shift(1)
+    combined["price_change"] = combined["close_price"] - prev_close
+    combined["daily_return_pct"] = combined["price_change"] / prev_close.replace(0, pd.NA)
+
+    fact = combined[combined["ingested_date"].isin(target_dates)].copy()
+    fact["date_id"] = to_date_id(fact["ingested_date"])
     return fact
 
 
@@ -309,11 +371,16 @@ def main() -> None:
     dim_date = merge_dim_date(new_dim_date_rows)
     write_dim_date(dim_date)
 
-    fact_positions = build_fact_positions(df_silver)
+    df_lookback = read_silver_lookback_day(min(dates))
+    fact_positions = build_fact_positions(df_silver, df_lookback)
     write_fact_positions(fact_positions)
 
     if not IS_BACKFILL:
-        set_watermark(max(dates))
+        # Deliberately max(dates) - 1, not max(dates): today (always
+        # the last entry in dates, see dates_to_process) must stay
+        # reprocessable by later runs the same day, so the watermark
+        # only ever marks days that are fully in the past.
+        set_watermark(max(dates) - timedelta(days=1))
 
     logger.info("Job complete. Dates processed: %s", [d.isoformat() for d in dates])
 
